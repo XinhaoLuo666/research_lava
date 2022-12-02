@@ -484,26 +484,27 @@ def main():
 
     if (args.test):
 
-        # net.eval()
-        # test_loss = 0
-        # test_acc = 0
-        # test_samples = 0
-        # with torch.no_grad():
-        #     for frame, label in test_data_loader:
-        #         frame = frame.to(args.device)  #[1,64,2,128,128]
-        #         frame = frame.transpose(0, 1)  # [N, T, C, H, W] -> [T, N, C, H, W]  [64,1,2,128,128]
-        #         frame = encoder(frame, args.size) # [64,1,2,64,64]
-        #         label = label.to(args.device)
-        #         out_fr = net(frame).mean(0) #[1,11]
-        #         loss = F.cross_entropy(out_fr, label)
-        #         test_samples += label.numel()
-        #         test_loss += loss.item() * label.numel()
-        #         test_acc += (out_fr.argmax(1) == label).float().sum().item()
-        #         print(test_acc)
-        #         functional.reset_net(net)
-        # test_time = time.time()
-        # test_acc /= test_samples
-        # print("test_acc：",test_acc)
+        net.eval()
+        test_loss = 0
+        test_acc = 0
+        test_samples = 0
+        with torch.no_grad():
+            for frame, label in test_data_loader:
+                frame = frame.to(args.device)  #[1,64,2,128,128]
+                frame = frame.transpose(0, 1)  # [N, T, C, H, W] -> [T, N, C, H, W]  [64,1,2,128,128]
+                frame = encoder(frame, args.size) # [64,1,2,64,64]
+                label = label.to(args.device)
+                out_fr = net(frame).mean(0) #[1,11]
+                loss = F.cross_entropy(out_fr, label)
+                test_samples += label.numel()
+                test_loss += loss.item() * label.numel()
+                test_acc += (out_fr.argmax(1) == label).float().sum().item()   #out_fr:(1,11)  ;out_fr.argmax(1) == label:(true)
+                print("正确个数1：", test_acc)
+                print("样本个数1：", test_samples)
+                functional.reset_net(net)
+        test_time = time.time()
+        test_acc /= test_samples
+        print("test_acc：",test_acc)
 
         net_ladl = net.to_lava()  # 这个net是conv和CubaLIFNode都有的
         print(net_ladl)
@@ -513,40 +514,56 @@ def main():
         net_lava = netx.hdf5.Network(net_config='./net_lava_dl.net', input_shape=(64, 64, 2))  # 再读取这个权重文件,注意这里 input_shape=(64, 64, 2)后面改成2，因为两个channel
         print('成功读取！')
         net_ladl = net_ladl.to(args.device);
+
+        test_loss = 0
+        test_acc = 0
+        test_samples = 0
+
+
         for frame, label in test_data_loader:
-            print(f'label = {label}')
-            frame = frame.to(args.device)  # [1,64,2,128,128]ddf
-            frame = frame.transpose(0, 1)  # [N, T, C, H, W] -> [T, N, C, H, W]  [64,1,2,128,128]
-            frame = encoder(frame, args.size)  # [64,1,2,64,64] # 要求输入格式必须为NCHWT  #正常encode的输入应该是[T, N, C, H, W]的格式
-            frame = frame.permute(1, 2, 3, 4, 0)  # [T, N, C, H, W]  -> 【N, C, H, W, T】
-
-            label = label.to(args.device)
-
             with torch.no_grad():
+                print(f'label = {label}')
+                frame = frame.to(args.device)  # [1,64,2,128,128]ddf
+                frame = frame.transpose(0, 1)  # [N, T, C, H, W] -> [T, N, C, H, W]  [64,1,2,128,128]
+                frame = encoder(frame, args.size)  # [64,1,2,64,64] # 要求输入格式必须为NCHWT  #正常encode的输入应该是[T, N, C, H, W]的格式
+                frame = frame.permute(1, 2, 3, 4, 0)  # [T, N, C, H, W]  -> 【N, C, H, W, T】
+                label = label.to(args.device)
+                out_fr = net_ladl(frame).mean(2)  # [1,11]  注意这里必须是mean（2）
+                # out_fr = net_ladl(frame)  # [1,11]
+
+                test_samples += label.numel()
+                test_acc += (out_fr.argmax(1) == label).float().sum().item()
+                print("正确个数2：",test_acc)
+                print("样本个数2：", test_samples)
+                functional.reset_net(net)
                 y = net_ladl(frame)   # 跑一遍网络[1,2,64,64,64]
                 print('y(ladl)=', y.sum(-1).argmax().item())  # 投票，选最大
-            print('执行网络！')
-
-            frame = frame.squeeze(0)
-            x = frame.permute(2, 1, 0, 3)
-            x = x.cpu().numpy()
 
 
-            source = io.source.RingBuffer(data=x)  # 来自循环数据缓冲区的尖峰生成器进程  x:（64,64,2,64）
-            sink = io.sink.RingBuffer(shape=(11,), buffer=args.T + 6)  # 将任意形状的数据接收到环形缓冲区的过程记忆力 用作探测的替代品  buffer：数据宿缓冲区的大小
-              # shape这里应该是11，因为输出的是11类，就像MNIST输出的是10一样
-            source.s_out.connect(net_lava.inp)  # 输出端口连接到对等进程的其他输入端口或其他输出端口,将此OutPort的父进程作为子进程的进程.应该和线程交互有关 shape:10
-                #Shapes (64, 64, 2) and (64, 64, 1) are incompatible.
-            net_lava.out.connect(sink.a_in)  # connect用于将OutPort连接到另一个进程的其他InPort或到其父进程的OutPort。
-            run_condition = RunSteps(num_steps=args.T + 6,
-                                    )  # s设置时间步长   如果这里不加 blocking=False，则会在run—start阻塞.加上则会在这行后面output是none（改完gevent后都是none）
-            run_config = Loihi1SimCfg(select_tag='fixed_pt')  # 设置运行配置
+        test_time = time.time()
+        test_acc /= test_samples
+        print("final_test_acc：",test_acc)
 
-            net_lava.run(condition=run_condition, run_cfg=run_config)
-            output = sink.data.get()
-            net_lava.stop()
-            print('y(lava)=', output.sum(-1).argmax())
-            exit()
+        print('执行最终网络！')
+        frame = frame.squeeze(0)
+        x = frame.permute(2, 1, 0, 3)
+        x = x.cpu().numpy()
+
+        source = io.source.RingBuffer(data=x)  # 来自循环数据缓冲区的尖峰生成器进程  x:（64,64,2,64）
+        sink = io.sink.RingBuffer(shape=(11,), buffer=args.T + 6)  # 将任意形状的数据接收到环形缓冲区的过程记忆力 用作探测的替代品  buffer：数据宿缓冲区的大小
+          # shape这里应该是11，因为输出的是11类，就像MNIST输出的是10一样
+        source.s_out.connect(net_lava.inp)  # 输出端口连接到对等进程的其他输入端口或其他输出端口,将此OutPort的父进程作为子进程的进程.应该和线程交互有关 shape:10
+            #Shapes (64, 64, 2) and (64, 64, 1) are incompatible.
+        net_lava.out.connect(sink.a_in)  # connect用于将OutPort连接到另一个进程的其他InPort或到其父进程的OutPort。
+        run_condition = RunSteps(num_steps=args.T + 6,
+                                )  # s设置时间步长   如果这里不加 blocking=False，则会在run—start阻塞.加上则会在这行后面output是none（改完gevent后都是none）
+        run_config = Loihi1SimCfg(select_tag='fixed_pt')  # 设置运行配置
+
+        net_lava.run(condition=run_condition, run_cfg=run_config)
+        output = sink.data.get()
+        net_lava.stop()
+        print('最终网络执行成功，y(lava)=', output.sum(-1).argmax())
+        exit()
 
 if __name__ == '__main__':
     main()
