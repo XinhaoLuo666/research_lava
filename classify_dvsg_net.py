@@ -541,22 +541,33 @@ def main():
 
 
         print('执行最终网络！')
+        print("==第1行==")
         frame = frame.squeeze(0)
+        print("==第2行==")
         x = frame.permute(2, 1, 0, 3)
+        print("==第3行==")
         x = x.cpu().numpy()
-
+        print("==第4行==")
         source = io.source.RingBuffer(data=x)  # 来自循环数据缓冲区的尖峰生成器进程  x:（64,64,2,64）
+        print("==第5行==")
         sink = io.sink.RingBuffer(shape=(11,), buffer=args.T + 6)  # 将任意形状的数据接收到环形缓冲区的过程记忆力 用作探测的替代品  buffer：数据宿缓冲区的大小
+        print("==第6行==")
           # shape这里应该是11，因为输出的是11类，就像MNIST输出的是10一样
         source.s_out.connect(net_lava.inp)  # 输出端口连接到对等进程的其他输入端口或其他输出端口,将此OutPort的父进程作为子进程的进程.应该和线程交互有关 shape:10
+        print("==第7行==")
             #Shapes (64, 64, 2) and (64, 64, 1) are incompatible.
         net_lava.out.connect(sink.a_in)  # connect用于将OutPort连接到另一个进程的其他InPort或到其父进程的OutPort。
+        print("==第8行==")
         run_condition = RunSteps(num_steps=args.T + 6,
                                 )  # s设置时间步长   如果这里不加 blocking=False，则会在run—start阻塞.加上则会在这行后面output是none（改完gevent后都是none）
+        print("==第9行==")
         run_config = Loihi1SimCfg(select_tag='fixed_pt')  # 设置运行配置
+        print("==第10行==")
 
         net_lava.run(condition=run_condition, run_cfg=run_config)
+        print("==第11行==")
         output = sink.data.get()
+        print("==第12行==")
         net_lava.stop()
         print('最终网络执行成功，y(lava)=', output.sum(-1).argmax())
         exit()
