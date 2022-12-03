@@ -489,22 +489,18 @@ def main():
         test_acc = 0
         test_samples = 0
         with torch.no_grad():
-            for frame, label in test_data_loader:
-                frame = frame.to(args.device)  #[1,64,2,128,128]
-                frame = frame.transpose(0, 1)  # [N, T, C, H, W] -> [T, N, C, H, W]  [64,1,2,128,128]
-                frame = encoder(frame, args.size) # [64,1,2,64,64]
-                label = label.to(args.device)
-                out_fr = net(frame).mean(0) #[1,11]
-                loss = F.cross_entropy(out_fr, label)
-                test_samples += label.numel()
-                test_loss += loss.item() * label.numel()
-                test_acc += (out_fr.argmax(1) == label).float().sum().item()   #out_fr:(1,11)  ;out_fr.argmax(1) == label:(true)
-                print("正确个数1：", test_acc)
-                print("样本个数1：", test_samples)
-                functional.reset_net(net)
-        test_time = time.time()
-        test_acc /= test_samples
-        print("test_acc：",test_acc)
+
+            frame = frame.to(args.device)  #[1,64,2,128,128]
+            frame = frame.transpose(0, 1)  # [N, T, C, H, W] -> [T, N, C, H, W]  [64,1,2,128,128]
+            frame = encoder(frame, args.size) # [64,1,2,64,64]
+            label = label.to(args.device)
+            out_fr = net(frame).mean(0) #[1,11]
+            loss = F.cross_entropy(out_fr, label)
+            test_samples += label.numel()
+            test_loss += loss.item() * label.numel()
+            test_acc += (out_fr.argmax(1) == label).float().sum().item()   #out_fr:(1,11)  ;out_fr.argmax(1) == label:(true)
+            functional.reset_net(net)
+
 
         net_ladl = net.to_lava()  # 这个net是conv和CubaLIFNode都有的
         print(net_ladl)
@@ -515,35 +511,26 @@ def main():
         print('成功读取！')
         net_ladl = net_ladl.to(args.device);
 
-        test_loss = 0
-        test_acc = 0
-        test_samples = 0
 
 
-        for frame, label in test_data_loader:
-            with torch.no_grad():
-                print("==================")
-                print(f'label = {label}')
-                frame = frame.to(args.device)  # [1,64,2,128,128]ddf
-                frame = frame.transpose(0, 1)  # [N, T, C, H, W] -> [T, N, C, H, W]  [64,1,2,128,128]
-                frame = encoder(frame, args.size)  # [64,1,2,64,64] # 要求输入格式必须为NCHWT  #正常encode的输入应该是[T, N, C, H, W]的格式
-                frame = frame.permute(1, 2, 3, 4, 0)  # [T, N, C, H, W]  -> 【N, C, H, W, T】
-                label = label.to(args.device)
-                out_fr = net_ladl(frame).mean(2)  # [1,11]  注意这里必须是mean（2）
-                # out_fr = net_ladl(frame)  # [1,11]
+        with torch.no_grad():
+            print("==================")
+            print(f'label = {label}')
+            frame = frame.to(args.device)  # [1,64,2,128,128]ddf
+            frame = frame.transpose(0, 1)  # [N, T, C, H, W] -> [T, N, C, H, W]  [64,1,2,128,128]
+            frame = encoder(frame, args.size)  # [64,1,2,64,64] # 要求输入格式必须为NCHWT  #正常encode的输入应该是[T, N, C, H, W]的格式
+            frame = frame.permute(1, 2, 3, 4, 0)  # [T, N, C, H, W]  -> 【N, C, H, W, T】
+            label = label.to(args.device)
+            out_fr = net_ladl(frame).mean(2)  # [1,11]  注意这里必须是mean（2）
+            # out_fr = net_ladl(frame)  # [1,11]
 
-                test_samples += label.numel()
-                test_acc += (out_fr.argmax(1) == label).float().sum().item()
-                print("正确个数2：",test_acc)
-                print("样本个数2：", test_samples)
-                print('y(ladl)=', out_fr.argmax(1).item())  # 投票，选最大
-                functional.reset_net(net)
+            test_samples += label.numel()
+            test_acc += (out_fr.argmax(1) == label).float().sum().item()
+            print('y(ladl)=', out_fr.argmax(1).item())  # 投票，选最大
+            functional.reset_net(net)
 
 
 
-        test_time = time.time()
-        test_acc /= test_samples
-        print("final_test_acc：",test_acc)
 
         print('执行最终网络！')
         frame = frame.squeeze(0)
@@ -569,10 +556,4 @@ def main():
 if __name__ == '__main__':
     main()
 
-# import torch
-#
-# print(torch.cuda.is_available())
-# a=torch.Tensor([1,2])
-# a=a.cuda()
-# print(a)
-# conda install pytorch==1.12.0 torchvision==0.13.0 torchaudio==0.12.0 cudatoolkit=11.3 -c pytorch
+
